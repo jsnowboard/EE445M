@@ -68,9 +68,8 @@ unsigned long JitterHistogram[JITTERSIZE]={0,};
 #define PB5  (*((volatile unsigned long *)0x40005080))
 
 void PortB_Init(void){ unsigned long volatile delay;
-  SYSCTL_RCGC2_R |= 0x02;       // activate port B
-  delay = SYSCTL_RCGC2_R;        
-  delay = SYSCTL_RCGC2_R;         
+  SYSCTL_RCGCGPIO_R |= 0x02;       // activate port B
+  while((SYSCTL_PRGPIO_R&0x02)==0){}; 	
   GPIO_PORTB_DIR_R |= 0x3C;    // make PB5-2 output heartbeats
   GPIO_PORTB_AFSEL_R &= ~0x3C;   // disable alt funct on PB5-2
   GPIO_PORTB_DEN_R |= 0x3C;     // enable digital I/O on PB5-2

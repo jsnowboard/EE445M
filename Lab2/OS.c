@@ -206,7 +206,7 @@ int OS_AddThread(void(*task)(void),
 			tcbList[0].prevPtr = &tcbList[i];          // B.prevPtr = &Z
 			
 			RunPt = &tcbList[0];
-			
+			NextRunPt = tcbList[0].nextPtr;
 			success = 1;
 			break;
 		}
@@ -267,9 +267,32 @@ int OS_AddPeriodicThread(void(*task)(void),
 // In lab 2, the priority field can be ignored
 // In lab 3, there will be up to four background threads, and this priority field 
 //           determines the relative priority of these four threads
+int prevPF4;
+void (*sw1task)(void); // this task will be called
 int OS_AddSW1Task(void(*task)(void), unsigned long priority)
-{
-	return 1; // successful add
+{  
+  SYSCTL_RCGCGPIO_R |= 0x00000020; // (a) activate clock for port F
+  while((SYSCTL_PRGPIO_R&0x20) == 0){};// ready?
+	GPIO_PORTF_CR_R |= 0x10;         // allow changes to PF4
+  GPIO_PORTF_DIR_R &= ~0x10;      // (c) make PF4 in (built-in button)
+  GPIO_PORTF_AFSEL_R &= ~0x10;    //     disable alt funct on PF4
+  GPIO_PORTF_DEN_R |= 0x10;       //     enable digital I/O on PF4
+  GPIO_PORTF_PCTL_R &= ~0;        //     PF4 is not both edges
+  GPIO_PORTF_AMSEL_R &= ~0x10;    //     disable analog functionality on PF4
+  GPIO_PORTF_PUR_R |= 0x10;       //     enable weak pull-up on PF4
+		
+  GPIO_PORTF_IS_R &= ~0x10;       // (d) PF4 is edge-sensitive
+  GPIO_PORTF_IBE_R |= 0x10;       // (e) clear flags 4
+  GPIO_PORTF_IM_R |= 0x10;        // (f) arm interrupt on PF4
+  GPIO_PORTF_IEV_R &= ~0x10;      //     PF4 falling edge event
+  GPIO_PORTF_ICR_R = 0x10;        //  configure PF4
+  prevPF4 = GPIO_PORTF_DATA_R & 0x10;  // used to debounce
+
+  NVIC_PRI7_R = (NVIC_PRI7_R&0xFF00FFFF)|0x00A00000; // (g) priority 2
+  NVIC_EN0_R = 0x40000000;                           // (h) enable interrupt 30 in NVIC
+	
+	sw1task = task;
+	return 1;                                          // successful add
 }
 
 //******** OS_AddSW2Task *************** 
@@ -285,8 +308,11 @@ int OS_AddSW1Task(void(*task)(void), unsigned long priority)
 // In lab 3, this command will be called will be called 0 or 1 times
 // In lab 3, there will be up to four background threads, and this priority field 
 //           determines the relative priority of these four threads
+void (*sw2task)(void);
 int OS_AddSW2Task(void(*task)(void), unsigned long priority)
-{
+{ 
+	//Board_Init();  // Set up board with onboard buttons
+	sw2task = task;
 	return 1; // successful add
 }
 
@@ -487,14 +513,26 @@ void Scheduler(void)
 
 #define PB3  (*((volatile unsigned long *)0x40005020))
 
-void SysTick_Handler(void) {	
-	PB3 ^= 0x8;
-	NextRunPt = RunPt->nextPtr;
-	
-	while(NextRunPt->sleepVal) {
-		NextRunPt = NextRunPt->nextPtr;
+//void SysTick_Handler(void) {	
+//	PB3 ^= 0x8;
+//	NextRunPt = RunPt->nextPtr;
+//	
+//	while(NextRunPt->sleepVal) {
+//		NextRunPt = NextRunPt->nextPtr;
+//	}
+
+//  NVIC_INT_CTRL_R = 0x10000000;		// trigger PendSV
+//}
+
+void sleeper(void)
+{
+	int i = 0;
+	for(i=0; i<NUM_THREADS; i++)
+	{
+		if(tcbList[i].sleepVal>0)
+		{
+			tcbList[i].sleepVal --;
+		}
 	}
-
-  NVIC_INT_CTRL_R = 0x10000000;		// trigger PendSV
+	return;
 }
-
